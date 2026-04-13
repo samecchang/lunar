@@ -85,9 +85,16 @@
       font-weight: 700;
       color: #2b2b2b;
     }
+    .day.weekend { color: #d32f2f; }
+    .weekday.weekend { color: #d32f2f; }
     .lunar {
       font-size: 14px;
       color: var(--accent);
+    }
+    .solar-term {
+      font-size: 13px;
+      color: #2e7d32;
+      font-weight: 600;
     }
     .today {
       border-color: #c77c38;
@@ -192,9 +199,9 @@
     const calendarEl = document.getElementById('calendar');
     const weekdays = ["日","一","二","三","四","五","六"];
     const weekdaysEl = document.getElementById('weekdays');
-    weekdays.forEach(w => {
+    weekdays.forEach((w, i) => {
       const div = document.createElement('div');
-      div.className = 'weekday';
+      div.className = 'weekday' + (i === 0 || i === 6 ? ' weekend' : '');
       div.textContent = `週${w}`;
       weekdaysEl.appendChild(div);
     });
@@ -227,6 +234,30 @@
     yearSel.value = now.getFullYear();
     monthSel.value = now.getMonth()+1;
 
+    /* ── 24 Solar Terms (節氣) ── */
+    const sTermInfo = [
+      0,21208,42467,63836,85337,107014,128867,150921,
+      173149,195551,218072,240693,263343,285989,308563,
+      331033,353350,375494,397447,419210,440795,462224,483532,504758
+    ];
+    const solarTermNames = [
+      "小寒","大寒","立春","雨水","驚蟄","春分",
+      "清明","穀雨","立夏","小滿","芒種","夏至",
+      "小暑","大暑","立秋","處暑","白露","秋分",
+      "寒露","霜降","立冬","小雪","大雪","冬至"
+    ];
+    function solarTermDay(year, n){
+      const d = new Date(31556925974.7*(year-1900) + sTermInfo[n]*60000);
+      d.setUTCHours(d.getUTCHours()+8);
+      return d.getUTCDate();
+    }
+    function getSolarTerm(year, month, day){
+      const i = (month-1)*2;
+      if(day === solarTermDay(year, i))   return solarTermNames[i];
+      if(day === solarTermDay(year, i+1)) return solarTermNames[i+1];
+      return '';
+    }
+
     function render(y, m){
       daysEl.innerHTML = '';
       const first = new Date(y, m-1, 1);
@@ -242,8 +273,9 @@
       for(let d=1; d<=daysInMonth; d++){
         const cell = document.createElement('div');
         cell.className = 'cell';
+        const dow = new Date(y, m-1, d).getDay();
         const day = document.createElement('div');
-        day.className = 'day';
+        day.className = 'day' + (dow === 0 || dow === 6 ? ' weekend' : '');
         day.textContent = d;
         const lunar = solarToLunar(y, m, d);
         const lunarDiv = document.createElement('div');
@@ -251,6 +283,14 @@
         lunarDiv.textContent = lunarText(lunar);
         cell.appendChild(day);
         cell.appendChild(lunarDiv);
+
+        const term = getSolarTerm(y, m, d);
+        if(term){
+          const termDiv = document.createElement('div');
+          termDiv.className = 'solar-term';
+          termDiv.textContent = term;
+          cell.appendChild(termDiv);
+        }
 
         if(y===today.getFullYear() && m===today.getMonth()+1 && d===today.getDate()){
           cell.classList.add('today');
