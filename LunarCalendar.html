@@ -85,15 +85,20 @@
       font-weight: 700;
       color: #2b2b2b;
     }
-    .day.weekend { color: #d32f2f; }
+    .day.weekend, .day.holiday { color: #d32f2f; }
     .weekday.weekend { color: #d32f2f; }
     .lunar {
       font-size: 14px;
       color: var(--accent);
     }
     .solar-term {
-      font-size: 13px;
       color: #2e7d32;
+      font-weight: 600;
+      margin-left: 4px;
+    }
+    .holiday-name {
+      font-size: 12px;
+      color: #d32f2f;
       font-weight: 600;
     }
     .today {
@@ -258,6 +263,65 @@
       return '';
     }
 
+    /* ── Taiwan Public Holidays (紀念日及節日實施條例) ── */
+    const solarHolidays = {
+      '1-1':'開國紀念日', '2-28':'和平紀念日',
+      '5-1':'勞動節', '9-28':'教師節', '10-10':'國慶日',
+      '10-25':'臺灣光復節', '12-25':'行憲紀念日'
+    };
+
+    /* ── 例外清單：'YYYY-M-D' → 標籤(放假) 或 false(不放假) ── */
+    const holidayExceptions = {
+      '2025-2-8':false,
+      '2026-2-20':'調整放假', '2026-2-27':'調整放假',
+      '2026-4-3':'調整放假',  '2026-4-6':'調整放假',
+      '2026-10-9':'調整放假', '2026-10-26':'調整放假'
+    };
+
+    function getHoliday(y, m, d){
+      /* 1. 例外清單優先 */
+      const exKey = y+'-'+m+'-'+d;
+      if(exKey in holidayExceptions)
+        return holidayExceptions[exKey] || '';
+
+      /* 2. 固定國曆假日 */
+      const sKey = m+'-'+d;
+      if(solarHolidays[sKey]) return solarHolidays[sKey];
+
+      /* 3. 清明節 & 兒童節（動態計算）
+         清明節：4/5，閏年為 4/4
+         兒童節：4/4，閏年與清明同日→合併顯示，前一日補假，逢週四則後一日 */
+      if(m === 4){
+        const isLeap = (y%4===0 && y%100!==0) || y%400===0;
+        if(isLeap){
+          if(d === 4) return '兒童節、清明節';
+          const dow = new Date(y,3,4).getDay();
+          const compDay = dow === 4 ? 5 : 3;
+          if(d === compDay) return '補假';
+        } else {
+          if(d === 4) return '兒童節';
+          if(d === 5) return '清明節';
+        }
+      }
+
+      /* 4. 農曆假日 */
+      const L = solarToLunar(y, m, d);
+      if(!L.isLeap){
+        if(L.lunarMonth===1 && L.lunarDay>=1 && L.lunarDay<=3) return '春節';
+        if(L.lunarMonth===5 && L.lunarDay===5) return '端午節';
+        if(L.lunarMonth===8 && L.lunarDay===15) return '中秋節';
+      }
+      /* 除夕 & 除夕前一日：check if next 1-2 days is 正月初一 */
+      const dt = new Date(y, m-1, d);
+      for(let off=1; off<=2; off++){
+        const nx = new Date(dt.getTime()+off*864e5);
+        const nL = solarToLunar(nx.getFullYear(), nx.getMonth()+1, nx.getDate());
+        if(!nL.isLeap && nL.lunarMonth===1 && nL.lunarDay===1)
+          return off===1 ? '除夕' : '春節';
+      }
+      return '';
+    }
+
     function render(y, m){
       daysEl.innerHTML = '';
       const first = new Date(y, m-1, 1);
@@ -274,22 +338,40 @@
         const cell = document.createElement('div');
         cell.className = 'cell';
         const dow = new Date(y, m-1, d).getDay();
-        const day = document.createElement('div');
-        day.className = 'day' + (dow === 0 || dow === 6 ? ' weekend' : '');
-        day.textContent = d;
+        const exKey = y+'-'+m+'-'+d;
+        const exOverride = exKey in holidayExceptions;
+        const exIsOff = exOverride && holidayExceptions[exKey] !== false;
+        const exForceWork = exOverride && holidayExceptions[exKey] === false;
+        const holiday = getHoliday(y, m, d);
+        const isWeekend = dow === 0 || dow === 6;
+
+        const dayEl = document.createElement('div');
+        let dayCls = 'day';
+        if(exForceWork)      { /* 例外不放假 → 黑色 */ }
+        else if(exIsOff)       dayCls += ' holiday';
+        else if(holiday)       dayCls += ' holiday';
+        else if(isWeekend)     dayCls += ' weekend';
+        dayEl.className = dayCls;
+        dayEl.textContent = d;
+
         const lunar = solarToLunar(y, m, d);
         const lunarDiv = document.createElement('div');
         lunarDiv.className = 'lunar';
-        lunarDiv.textContent = lunarText(lunar);
-        cell.appendChild(day);
-        cell.appendChild(lunarDiv);
-
         const term = getSolarTerm(y, m, d);
         if(term){
-          const termDiv = document.createElement('div');
-          termDiv.className = 'solar-term';
-          termDiv.textContent = term;
-          cell.appendChild(termDiv);
+          lunarDiv.innerHTML = lunarText(lunar) + '<span class="solar-term">' + term + '</span>';
+        } else {
+          lunarDiv.textContent = lunarText(lunar);
+        }
+
+        cell.appendChild(dayEl);
+        cell.appendChild(lunarDiv);
+
+        if(holiday){
+          const hDiv = document.createElement('div');
+          hDiv.className = 'holiday-name';
+          hDiv.textContent = holiday;
+          cell.appendChild(hDiv);
         }
 
         if(y===today.getFullYear() && m===today.getMonth()+1 && d===today.getDate()){
